@@ -12,5 +12,13 @@ uv run fastapi dev src/app/main.py
 - Health check: http://127.0.0.1:8000/health
 - API docs: http://127.0.0.1:8000/docs
 
+## Quality checks
+```bash
+uv run ruff check          # lint
+uv run ruff format --check # formatting
+uv run mypy                # strict type checking
+uv run pytest              # tests
+```
+
 ## Architecture
 Modular monolith: feature modules with clean layering (router → service → repository). See [docs/adr](docs/adr).
