@@ -6,10 +6,14 @@ Backend for an AI-native inventory & operations platform: products, warehouses, 
 
 ## Run locally
 ```bash
+cp .env.example .env            # then set a real POSTGRES_PASSWORD
+docker compose up -d            # PostgreSQL 18 + pgvector on localhost:5434
 uv sync
+uv run alembic upgrade head     # apply database migrations
 uv run fastapi dev src/app/main.py
 ```
-- Health check: http://127.0.0.1:8000/health
+- Liveness: http://127.0.0.1:8000/health
+- Readiness (checks the database): http://127.0.0.1:8000/health/ready
 - API docs: http://127.0.0.1:8000/docs
 
 ## Quality checks
