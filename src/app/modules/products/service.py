@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.errors import ConflictError, NotFoundError
 from app.modules.products.models import Product
 from app.modules.products.repository import ProductRepository
-from app.modules.products.schemas import ProductCreate, ProductUpdate
+from app.modules.products.schemas import ProductCreate, ProductListParams, ProductUpdate
 
 
 class ProductService:
@@ -30,8 +30,8 @@ class ProductService:
             raise NotFoundError(f"Product {product_id} was not found.")
         return product
 
-    async def get_page(self, *, offset: int, limit: int) -> Sequence[Product]:
-        return await self._repository.get_page(offset=offset, limit=limit)
+    async def search(self, params: ProductListParams) -> tuple[Sequence[Product], int]:
+        return await self._repository.search(params)
 
     async def update(self, product_id: int, data: ProductUpdate) -> Product:
         product = await self.get(product_id)

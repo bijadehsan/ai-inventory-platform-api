@@ -10,6 +10,21 @@ def product_payload(**overrides: Any) -> dict[str, Any]:
     return payload | overrides
 
 
+async def create_products(client: AsyncClient, *products: dict[str, Any]) -> None:
+    for product in products:
+        response = await client.post(PRODUCTS, json=product_payload(**product))
+        assert response.status_code == 201
+
+
+async def list_skus(client: AsyncClient, **params: Any) -> list[str]:
+    response = await client.get(PRODUCTS, params=params)
+    assert response.status_code == 200
+    return [product["sku"] for product in response.json()["items"]]
+
+
+# --- create / get / update ---------------------------------------------------
+
+
 async def test_create_product_returns_201_with_body(client: AsyncClient) -> None:
     response = await client.post(PRODUCTS, json=product_payload())
 
@@ -62,11 +77,75 @@ async def test_patch_updates_only_sent_fields(client: AsyncClient) -> None:
     assert response.json()["name"] == "Laptop"
 
 
-async def test_list_respects_limit(client: AsyncClient) -> None:
-    for number in range(3):
-        await client.post(PRODUCTS, json=product_payload(sku=f"SKU-{number}"))
+# --- list: pagination, filters, sorting --------------------------------------
 
-    response = await client.get(PRODUCTS, params={"limit": 2})
 
-    assert response.status_code == 200
-    assert [product["sku"] for product in response.json()] == ["SKU-0", "SKU-1"]
+async def test_list_returns_page_with_total(client: AsyncClient) -> None:
+    await create_products(client, *({"sku": f"SKU-{n}"} for n in range(3)))
+
+    response = await client.get(
+        PRODUCTS, params={"limit": 2, "offset": 1, "sort_by": "sku", "sort_order": "asc"}
+    )
+
+    body = response.json()
+    assert body["total"] == 3
+    assert body["offset"] == 1
+    assert body["limit"] == 2
+    assert [product["sku"] for product in body["items"]] == ["SKU-1", "SKU-2"]
+
+
+async def test_search_matches_name_or_sku_case_insensitive(client: AsyncClient) -> None:
+    await create_products(
+        client,
+        {"sku": "LAP-1", "name": "Gaming Laptop"},
+        {"sku": "MOU-1", "name": "Wireless Mouse"},
+        {"sku": "XLAPTOP", "name": "Stand"},
+    )
+
+    skus = await list_skus(client, search="laptop", sort_by="sku", sort_order="asc")
+
+    assert skus == ["LAP-1", "XLAPTOP"]
+
+
+async def test_search_treats_percent_as_literal(client: AsyncClient) -> None:
+    await create_products(client, {"sku": "A-1", "name": "50% discount bin"}, {"sku": "A-2"})
+
+    assert await list_skus(client, search="%") == ["A-1"]
+
+
+async def test_filter_by_price_range_and_active(client: AsyncClient) -> None:
+    await create_products(
+        client,
+        {"sku": "CHEAP", "unit_price": "5"},
+        {"sku": "MID", "unit_price": "50"},
+        {"sku": "PRICEY", "unit_price": "500"},
+    )
+    mid = (await client.get(PRODUCTS, params={"search": "MID"})).json()["items"][0]
+    await client.patch(f"{PRODUCTS}/{mid['id']}", json={"is_active": False})
+
+    skus = await list_skus(client, min_price="10", max_price="1000", is_active="true")
+
+    assert skus == ["PRICEY"]
+
+
+async def test_sort_by_price_descending(client: AsyncClient) -> None:
+    await create_products(
+        client,
+        {"sku": "B", "unit_price": "20"},
+        {"sku": "A", "unit_price": "30"},
+        {"sku": "C", "unit_price": "10"},
+    )
+
+    assert await list_skus(client, sort_by="unit_price", sort_order="desc") == ["A", "B", "C"]
+
+
+async def test_invalid_list_params_return_422(client: AsyncClient) -> None:
+    bad_requests = [
+        {"min_price": "100", "max_price": "10"},
+        {"sort_by": "password"},
+        {"limit": "1000"},
+        {"unexpected": "x"},
+    ]
+    for params in bad_requests:
+        response = await client.get(PRODUCTS, params=params)
+        assert response.status_code == 422, params

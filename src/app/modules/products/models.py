@@ -1,7 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import DateTime, Identity, Numeric, String, Text, func
+from sqlalchemy import DateTime, Identity, Index, Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -9,6 +9,23 @@ from app.core.database import Base
 
 class Product(Base):
     __tablename__ = "products"
+    __table_args__ = (
+        # Trigram GIN indexes make "contains" searches (ILIKE '%text%') fast.
+        Index(
+            "ix_products_name_trgm",
+            "name",
+            postgresql_using="gin",
+            postgresql_ops={"name": "gin_trgm_ops"},
+        ),
+        Index(
+            "ix_products_sku_trgm",
+            "sku",
+            postgresql_using="gin",
+            postgresql_ops={"sku": "gin_trgm_ops"},
+        ),
+        # Default list order is newest first.
+        Index("ix_products_created_at_id", "created_at", "id"),
+    )
 
     id: Mapped[int] = mapped_column(Identity(), primary_key=True)
     sku: Mapped[str] = mapped_column(String(64), unique=True)
